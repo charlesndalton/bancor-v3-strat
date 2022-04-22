@@ -42,14 +42,14 @@ contract StrategyOperationsTest is StrategyFixture {
         strategy.harvest();
         assertRelApproxEq(strategy.estimatedTotalAssets(), _amount, DELTA);
 
-        // // tend
-        // vm.prank(strategist);
-        // strategy.tend();
+        // tend
+        vm.prank(strategist);
+        strategy.tend();
 
-        // vm.prank(user);
-        // vault.withdraw();
+        vm.prank(user);
+        vault.withdraw();
 
-        // assertRelApproxEq(want.balanceOf(user), balanceBefore, DELTA);
+        assertRelApproxEq(want.balanceOf(user), balanceBefore, DELTA);
     }
 
     function testEmergencyExit(uint256 _amount) public {

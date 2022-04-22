@@ -41,7 +41,7 @@ contract StrategyFixture is ExtendedDSTest, Test {
     // @dev maximum amount of want tokens deposited based on @maxDollarNotional
     uint256 public maxFuzzAmt;
     // @dev maximum dollar amount of tokens to be deposited
-    uint256 public maxDollarNotional = 1_000_000;
+    uint256 public maxDollarNotional = 1_000_000; // temporary with depositLimit 1_000_000
     // @dev maximum dollar amount of tokens for single large amount
     uint256 public bigDollarNotional = 49_000_000;
     // @dev used for non-fuzz tests to test large amounts

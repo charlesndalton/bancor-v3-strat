@@ -11,18 +11,25 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-// Import interfaces for many popular DeFi projects, or add your own!
-//import "./interfaces/<protocol>/<Interface>.sol";
+import "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
+
 import "./interfaces/Bancor/IBancorNetwork.sol";
 import "./interfaces/Bancor/IPoolCollection.sol";
+import "./interfaces/Bancor/IPendingWithdrawals.sol";
 
 contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
     using Address for address;
+    using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
     IBancorNetwork public constant bancor = IBancorNetwork(0xeEF417e1D5CC832e619ae18D2F140De2999dD4fB);
+    IPendingWithdrawals public constant pendingWithdrawals = IPendingWithdrawals(0x857Eb0Eb2572F7092C417CD386BA82e45EbA9B8a);
     IPoolCollection public poolCollection;
     IPoolToken public poolToken;
+
+    // Bancor gives you an ID for a withdrawal request, so we manage it like this
+    DoubleEndedQueue.Bytes32Deque internal withdrawalRequestQueue;
+    uint256 public totalRequestedWithdrawalAmount; // Denominated in bancor pool tokens
 
     // solhint-disable-next-line no-empty-blocks
     constructor(address _vault) BaseStrategy(_vault) {
@@ -66,19 +73,28 @@ contract Strategy is BaseStrategy {
         if (_balanceOfWant > _debtOutstanding) {
             uint256 _amountToInvest = _balanceOfWant - _debtOutstanding;
 
+            Pool memory poolData = poolCollection.poolData(want);
+            if (poolData.liquidity.stakedBalance + _amountToInvest > poolData.depositLimit) {
+                _amountToInvest = poolData.depositLimit - poolData.liquidity.stakedBalance;
+                if (_amountToInvest == 0) return;
+            }
+
             _checkAllowance(address(bancor), address(want), _amountToInvest);
             bancor.deposit(want, _amountToInvest);
         }
     }
 
+    
+    /* NOTE: Bancor has a waiting period for withdrawals. We need to first request
+             a withdrawal, at which point we recieve a withdrawal request ID. 7 days later,
+             we can complete the withdrawal with this ID. */
     function liquidatePosition(uint256 _amountNeeded)
         internal
         override
         returns (uint256 _liquidatedAmount, uint256 _loss)
     {
-        // TODO: Do stuff here to free up to `_amountNeeded` from all positions back into `want`
-        // NOTE: Maintain invariant `want.balanceOf(this) >= _liquidatedAmount`
-        // NOTE: Maintain invariant `_liquidatedAmount + _loss <= _amountNeeded`
+        // Maintains invariant `want.balanceOf(this) >= _liquidatedAmount`
+        // Maintains invariant `_liquidatedAmount + _loss <= _amountNeeded`
 
         uint256 totalAssets = want.balanceOf(address(this));
         if (_amountNeeded > totalAssets) {
@@ -152,6 +168,20 @@ contract Strategy is BaseStrategy {
     }
 
     // ----------------- SUPPORT & UTILITY FUNCTIONS ----------
+
+    function _requestWithdrawal(uint256 _poolTokenAmount) internal {
+        uint256 _withdrawalID = bancor.initWithdrawal(poolToken, _poolTokenAmount);
+
+        withdrawalRequestQueue.pushBack(bytes32(_withdrawalID)); // Technically we're losing bits 32-255 in the cast, but this should only matter if more than 4.2B withdrawal requests happen
+        totalRequestedWithdrawalAmount += _poolTokenAmount;
+    }
+
+    function _completeWithdrawal(uint256 _withdrawalID) internal {
+        require(_withdrawalID == uint256(withdrawalRequestQueue.popFront()), "!in_order");
+        totalRequestedWithdrawalAmount -= pendingWithdrawals.withdrawalRequest(_withdrawalID).poolTokenAmount;
+
+        bancor.withdraw(_withdrawalID);
+    }
 
     // _checkAllowance adapted from https://github.com/therealmonoloco/liquity-stability-pool-strategy/blob/1fb0b00d24e0f5621f1e57def98c26900d551089/contracts/Strategy.sol#L316
 
