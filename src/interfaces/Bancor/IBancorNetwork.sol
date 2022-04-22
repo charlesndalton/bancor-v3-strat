@@ -3,7 +3,6 @@ pragma solidity 0.8.13;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-
 import { IPoolCollection } from "./IPoolCollection.sol";
 import { IPoolToken } from "./IPoolToken.sol";
 
