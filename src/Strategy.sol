@@ -46,8 +46,9 @@ contract Strategy is BaseStrategy {
         );
     }
 
+    /// tokens pending withdrawals are actually send to the pendingWithdarwal contract so must be accounted for separately
     function estimatedTotalAssets() public view override returns (uint256) {
-        return balanceOfWant() + valueOfPoolToken();
+        return balanceOfWant() + valueOfPoolToken() + balanceOfPendingWithdrawals();
     }
 
     function prepareReturn(uint256 _debtOutstanding) internal override returns (uint256 _profit, uint256 _loss, uint256 _debtPayment){
@@ -79,7 +80,7 @@ contract Strategy is BaseStrategy {
     internal
     override
     returns (uint256 _liquidatedAmount, uint256 _loss){
-     uint256 totalAssets = want.balanceOf(address(this));
+        uint256 totalAssets = want.balanceOf(address(this));
         if (_amountNeeded > totalAssets) {
             _liquidatedAmount = totalAssets;
         unchecked {
@@ -93,7 +94,8 @@ contract Strategy is BaseStrategy {
     function liquidateAllPositions() internal override returns (uint256) {
         return want.balanceOf(address(this));
     }
-  function prepareMigration(address _newStrategy) internal override {
+
+    function prepareMigration(address _newStrategy) internal override {
     }
 
     function protectedTokens() internal view override returns (address[] memory){}
@@ -157,5 +159,13 @@ contract Strategy is BaseStrategy {
 
     function valueOfPoolToken() public view returns (uint256) {
         return poolCollection.poolTokenToUnderlying(want, balanceOfPoolToken());
+    }
+
+    /// sum amount of all pending withdrawals
+    function balanceOfPendingWithdrawals() public view returns (uint256 _wants){
+        uint256[] memory ids = pendingWithdrawals.withdrawalRequestIds(address(this));
+        for (uint8 i = 0; i < ids.length; i++) {
+            _wants += pendingWithdrawals.withdrawalRequest(ids[i]).reserveTokenAmount;
+        }
     }
 }
